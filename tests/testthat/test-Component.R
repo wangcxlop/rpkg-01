@@ -120,13 +120,17 @@ test_that("LS_OneBreak: Ic = NA 退化为线性回归", {
   expect_equal(as.vector(out$coef), c(1, 2), tolerance = 1e-10)
 })
 
-# B4：断点落在边界时示性列与截距列共线，秩亏只以 NA 系数体现。
-test_that("LS_OneBreak: 断点取边界时秩亏，系数含 NA", {
+# B4：边界断点的设计矩阵秩亏，系数不唯一；只比较拟合结果。
+test_that("LS_OneBreak: 边界断点的拟合值与无断点模型一致", {
   X <- seq_len(10)
   Y <- 1 + 0.5 * X
+  baseline <- LS_OneBreak(Y, X, NA)
 
-  expect_true(anyNA(LS_OneBreak(Y, X, 0L)$coef))  # 示性列全为 1
-  expect_true(anyNA(LS_OneBreak(Y, X, 10L)$coef)) # 示性列全为 0
+  for (ic in c(0L, length(Y))) {
+    out <- LS_OneBreak(Y, X, ic)
+    expect_equal(out$fitted, baseline$fitted, tolerance = 1e-10)
+    expect_equal(out$SSE, baseline$SSE, tolerance = 1e-10)
+  }
 })
 
 # LS_MultiBreaks ---------------------------------------------------------------

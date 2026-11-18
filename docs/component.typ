@@ -141,7 +141,7 @@ SSE <- sum(l$residuals^2)
 
 - `.lm.fit` 走 LINPACK `dqrls`，复杂度 $O(n p^2)$；刻意绕开 `lm()` 的公式与模型框架开销。
 - **不检查 `NA`/`NaN`/`Inf`**：`Y` 含缺失立刻报错，与 `RemoveSeasonal` 的 `na.rm` 语义不一致（B7）。
-- 秩亏时 `.lm.fit` 在 `coefficients` 中留 `NA`，随后 `design %*% coef` 把 `NA` 扩散进 `fitted`（B4）。
+- 秩亏时系数不唯一；`.lm.fit` 不保证用 `NA` 标记不可辨识系数，调用方也未检查返回的 `rank`（B4）。
 - `...` 原样接收但**从未使用**（B5）。
 
 = `LS_OneBreak`
@@ -172,8 +172,8 @@ LS_OneBreak(Y, X, Ic, ...)
   table.header([*输入*], [*行为*]),
   hline(stroke: 0.4pt),
   [`Ic = NA`], [单段线性回归，`coef` 长度 2],
-  [`Ic = 0`], [示性列全为 1，与截距列共线，`coef` 含 `NA`，见 B4],
-  [`Ic = n`], [示性列全为 0，秩亏，`coef` 含 `NA`，见 B4],
+  [`Ic = 0`], [示性列全为 1，与截距列共线，系数不唯一，见 B4],
+  [`Ic = n`], [示性列全为 0，秩亏，跳变系数不可辨识，见 B4],
   [`Ic` 非整数], [`rep` 的次数会截断；可能产生长度不匹配、回收或警告，不应作为有效断点],
   [`Y` 含 `NA`], [`.lm.fit` 报错],
   hline(stroke: 0.8pt),
@@ -264,7 +264,7 @@ lm_solve(design, Y, ...)
   [B1], [`RemoveSeasonal`], [`mu` 无 `names`，与 `sort(unique(t_mmdd))` 的对应关系只能靠位置猜], [给 `mu` 命名],
   [B2], [`RemoveSeasonal`], [`t_mmdd` 为 `NA` 处 `anomaly` 静默等于 0，看起来像“已去季节”], [置 `NA` 或报错],
   [B3], [`LS_*`], [一处用 $X$、一处用 $X - overline(X)$，同包内两套参数化], [统一中心化],
-  [B4], [`LS_*`], [边界断点可能导致秩亏及缺失系数；越界也可能报错], [校验断点及秩],
+  [B4], [`LS_*`], [边界断点导致秩亏、系数不唯一；未检查返回的秩，越界也可能报错], [校验断点及秩],
   [B5], [`lm_solve`], [未匹配的 `...` 未使用；`only.SSE` 仍可通过 `LS_*` 传入], [明确参数接口],
   [B6], [`LS_OneBreak`], [`@param T_anorm` 与形参 `X` 不符，当前 `NAMESPACE` 未导出它], [对齐文档与导出],
   [B7], [`lm_solve`], [`.lm.fit` 不接受 `NA`，与 `RemoveSeasonal` 的 `na.rm` 语义冲突], [入口统一 `na.omit` 或显式报错],
@@ -289,7 +289,7 @@ lm_solve(design, Y, ...)
   [`lm_solve`], [2], [`SSE = sum(e^2)`、`fitted + resi = Y`；`only.SSE` 只返回 `SSE`],
   [`LS_OneBreak`], [4],
   [无噪两段数据精确还原系数；断点模型 SSE 不大于无断点模型；
-   `Ic = NA` 退化为线性回归；`Ic in {0, n}` 秩亏暴露为 `NA` 系数],
+   `Ic = NA` 退化为线性回归；边界断点与无断点模型的拟合值和 SSE 一致],
   [`LS_MultiBreaks`], [3],
   [三段数据还原斜率与截距跳变；单断点时与 `LS_OneBreak` 的 `fitted`/`SSE` 相等；
    `Ips` 只有一个元素时退化为线性回归],
