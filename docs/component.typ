@@ -26,8 +26,7 @@
 = 概述
 
 本文档描述 `R/Component.R` 中四个函数的**实际行为**（而非设计意图）。
-文档与 `tests/testthat/test-Component.R` 一一对应：每一条数学性质都有对应断言，
-每一个已知缺陷都有编号（B1–B8）并在 §7 汇总。
+测试文件 `tests/testthat/test-Component.R` 覆盖主要行为；已知风险以 B1–B8 标注。
 
 #table(
   columns: (2.6cm, 1.5cm, 1fr),
@@ -38,7 +37,7 @@
   hline(stroke: 0.4pt),
   [`RemoveSeasonal`], [否], [按日历月日分组求气候均值，返回去季节序列],
   [`lm_solve`], [否], [QR 最小二乘内核，返回系数、拟合、残差、SSE],
-  [`LS_OneBreak`], [是（`@export`）], [单断点同斜率分段回归],
+  [`LS_OneBreak`], [否（源码有 `@export`）], [单断点同斜率分段回归],
   [`LS_MultiBreaks`], [否], [多断点同斜率分段回归],
   hline(stroke: 0.8pt),
 )
@@ -65,7 +64,7 @@
 
 == 数学定义
 
-设 $S_k = { i : t_i = k, bold(t)_i " 非缺失" }$，对 $t$ 中出现的每个互异取值 $k$（升序）：
+设 $S_k$ 为月日等于 $k$ 且观测值非缺失的索引集合。对每个出现的非缺失月日 $k$（升序），当 $S_k$ 非空时：
 
 $ mu_k = 1 / |S_k| sum_(i in S_k) y_i, quad a_i = y_i - mu_(t_i) $
 
@@ -97,7 +96,7 @@ for (i in seq_along(inds)) {
 }
 ```
 
-- 时间复杂度 $O(n + k log k)$，$k$ 为互异月日数；单层循环，无矩阵运算。
+- 每组均扫描一次月日向量，分组扫描耗时 $O(n k)$，另有去重和排序开销；$k$ 为互异月日数。
 - `anomaly` 预分配为 `numeric()`，故**未被任何分组命中的位置恒为 0**（B2）。
 
 == 边界情形
@@ -110,7 +109,7 @@ for (i in seq_along(inds)) {
   table.header([*输入*], [*行为*]),
   hline(stroke: 0.4pt),
   [`y` 含 `NA`], [该点不参与均值（`na.rm = TRUE`），`anomaly` 对应位置为 `NA`],
-  [某组 `y` 全为 `NA`], [`mean` 返回 `NaN`，该组 `anomaly` 全为 `NaN`],
+  [某组 `y` 全为 `NA`], [`mu` 为 `NaN`；异常值仍为 `NA`],
   [某组仅 1 个观测], [`mu` 即该观测值，`anomaly` 为 0],
   [`t_mmdd` 含 `NA`], [该位置不进入任何组，`anomaly` 静默为 0，见 B2],
   [`t_mmdd` 无序], [输出 `mu` 仍按升序排列，不依赖输入顺序],
@@ -130,7 +129,7 @@ for (i in seq_along(inds)) {
 lm_solve(design, response, only.SSE = FALSE, ...)
 ```
 
-`only.SSE = TRUE` 时只返回 `list(SSE)`，供断点搜索此类“只比较 SSE”的场景省掉拟合向量。
+`only.SSE = TRUE` 时只返回 `list(SSE)`；实现仍会计算拟合值。
 
 == 实现要点
 
@@ -175,7 +174,7 @@ LS_OneBreak(Y, X, Ic, ...)
   [`Ic = NA`], [单段线性回归，`coef` 长度 2],
   [`Ic = 0`], [示性列全为 1，与截距列共线，`coef` 含 `NA`，见 B4],
   [`Ic = n`], [示性列全为 0，秩亏，`coef` 含 `NA`，见 B4],
-  [`Ic` 非整数], [`rep(0, Ic)` 截断导致两段长度之和 $!= n$，`cbind` 报错],
+  [`Ic` 非整数], [`rep` 的次数会截断；可能产生长度不匹配、回收或警告，不应作为有效断点],
   [`Y` 含 `NA`], [`.lm.fit` 报错],
   hline(stroke: 0.8pt),
 )
@@ -193,7 +192,7 @@ $ Y_i = beta_0 + beta_1 (X_i - overline(X)) + sum_(j=2)^m delta_j I(s_i = j) + e
 设计阵 $D = [bold(1), X - overline(X), I(s = 2), dots, I(s = m)]$，$p = m + 1$。
 
 系数含义：$beta_1$ 为全段共用斜率；$beta_0$ 为**段 1 在 $X = overline(X)$ 处的水平**；
-$delta_j$ 为段 $j$ 相对段 1 的截距差，故 $delta_1 eq.not 0$ 不出现，段 1 由 $beta_0$ 承载。
+$delta_j$ 为段 $j$ 相对段 1 的截距差；段 1 由 $beta_0$ 承载，不需要额外的跳变项。
 
 == 实现要点
 
@@ -208,7 +207,7 @@ for (i in seq_len(n_breaks)) {
 lm_solve(design, Y, ...)
 ```
 
-- 时空复杂度 $O(n m^2)$；循环内反复 `cbind` 增长矩阵，$m$ 大时为 $O(n m^2)$ 次拷贝，可接受但不优雅。
+- 反复 `cbind` 的累计复制量为 $O(n m^2)$；设计阵占用 $O(n m)$ 空间，最小二乘计算通常为 $O(n m^2)$。
 - `Ips` 长度 1（即 $m = 1$）时 `seq_len(0)` 为空，退化为普通线性回归。
 
 == 边界情形
@@ -222,8 +221,8 @@ lm_solve(design, Y, ...)
   hline(stroke: 0.4pt),
   [`Ips[m] = n`], [预期用法，全部观测被覆盖],
   [`Ips[m] < n`], [尾部示性列全 0，**静默归入段 1**，见 B8],
-  [`Ips` 有重复值], [出现空段，对应列全 0，秩亏，`coef` 含 `NA`],
-  [`Ips` 非递增], [示性列重叠或反向赋值，结果无意义，不报错],
+  [`Ips` 有重复值], [`:` 会生成递减索引，并非空段；可能产生错误的示性列],
+  [`Ips` 非递增], [可能产生重叠或反向索引，结果不可靠，也可能报错],
   hline(stroke: 0.8pt),
 )
 
@@ -253,7 +252,7 @@ lm_solve(design, Y, ...)
 
 = 已知缺陷
 
-按严重度排序，供后续修复时逐条销账。测试中对应位置均有注释。
+以下问题和设计风险供后续评估；部分边界尚未建立测试。
 
 #table(
   columns: (1.1cm, 1.9cm, 1fr, 1.9cm),
@@ -265,9 +264,9 @@ lm_solve(design, Y, ...)
   [B1], [`RemoveSeasonal`], [`mu` 无 `names`，与 `sort(unique(t_mmdd))` 的对应关系只能靠位置猜], [给 `mu` 命名],
   [B2], [`RemoveSeasonal`], [`t_mmdd` 为 `NA` 处 `anomaly` 静默等于 0，看起来像“已去季节”], [置 `NA` 或报错],
   [B3], [`LS_*`], [一处用 $X$、一处用 $X - overline(X)$，同包内两套参数化], [统一中心化],
-  [B4], [`LS_*`], [断点越界/退化 → 秩亏 → `coef` 为 `NA` → `fitted` 为 `NA`，静默], [`stopifnot(Ic > 0, Ic < n)`],
-  [B5], [`lm_solve`], [`...` 传入后从未使用，`LS_*` 的 `...` 实为死参数], [删除 `...`],
-  [B6], [`LS_OneBreak`], [`@param T_anorm` 与形参 `X` 不符；`LS_MultiBreaks` 缺 `@export`], [对齐文档与导出],
+  [B4], [`LS_*`], [边界断点可能导致秩亏及缺失系数；越界也可能报错], [校验断点及秩],
+  [B5], [`lm_solve`], [未匹配的 `...` 未使用；`only.SSE` 仍可通过 `LS_*` 传入], [明确参数接口],
+  [B6], [`LS_OneBreak`], [`@param T_anorm` 与形参 `X` 不符，当前 `NAMESPACE` 未导出它], [对齐文档与导出],
   [B7], [`lm_solve`], [`.lm.fit` 不接受 `NA`，与 `RemoveSeasonal` 的 `na.rm` 语义冲突], [入口统一 `na.omit` 或显式报错],
   [B8], [`LS_MultiBreaks`], [`Ips[m] < n` 时尾部观测静默归入段 1，断点定位错误不可见], [断言 `Ips[m] == length(Y)`],
   hline(stroke: 0.8pt),
@@ -301,7 +300,10 @@ lm_solve(design, Y, ...)
 
 ```r
 testthat::test_local()          # 或 devtools::test()
-R CMD check --no-manual .       # CI 中由 R-CMD-check.yaml 执行
+```
+
+```bash
+R CMD check --no-manual .       # CI 运行包检查
 ```
 
 测试对四个函数的取用方式统一为 `rpkg.template:::f`，与导出状态解耦：
@@ -317,4 +319,4 @@ lm_solve       <- rpkg.template:::lm_solve
 typst compile docs/component.typ docs/component.pdf
 ```
 
-文档刻意不 `#import` 外部模板，任意 Typst 0.11 及以上版本均可独立编译。
+文档不依赖外部模板；中文显示需要可用的中文字体。

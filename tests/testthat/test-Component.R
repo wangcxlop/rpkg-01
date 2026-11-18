@@ -39,8 +39,8 @@ test_that("RemoveSeasonal: 各组异常值均值为 0，长度与 y 一致", {
   expect_length(out$anomaly, length(y))
   expect_length(out$mu, 366L)
   expect_equal(
-    tapply(out$anomaly, t_mmdd, mean),
-    setNames(numeric(366L), seq_len(366L))
+    as.vector(tapply(out$anomaly, t_mmdd, mean)),
+    numeric(366L)
   )
 })
 
@@ -75,7 +75,7 @@ test_that("lm_solve: 拟合值加残差等于响应值，SSE 等于残差平方�
 
   out <- lm_solve(cbind(1, X), Y)
 
-  expect_equal(out$fitted + out$resi, Y)
+  expect_equal(out$fitted + as.vector(out$resi), Y)
   expect_equal(out$SSE, sum(out$resi^2))
 })
 
@@ -97,7 +97,7 @@ test_that("LS_OneBreak: 无噪声两段数据精确还原截距跳变", {
 
   out <- LS_OneBreak(Y, X, 10L)
 
-  expect_equal(unname(out$coef), c(1, 0.5, 2), tolerance = 1e-10)
+  expect_equal(as.vector(out$coef), c(1, 0.5, 2), tolerance = 1e-10)
   expect_equal(out$fitted, Y, tolerance = 1e-10)
   expect_lt(out$SSE, 1e-20)
 })
@@ -117,7 +117,7 @@ test_that("LS_OneBreak: Ic = NA 退化为线性回归", {
   out <- LS_OneBreak(Y, X, NA)
 
   expect_length(out$coef, 2L)
-  expect_equal(unname(out$coef), c(1, 2), tolerance = 1e-10)
+  expect_equal(as.vector(out$coef), c(1, 2), tolerance = 1e-10)
 })
 
 # B4：断点落在边界时示性列与截距列共线，秩亏只以 NA 系数体现。
@@ -138,7 +138,7 @@ test_that("LS_MultiBreaks: 三段数据还原共用斜率与截距跳变", {
   out <- LS_MultiBreaks(Y, X, c(10L, 20L, 30L))
 
   # X 已中心化：beta0 为段 1 在 X = mean(X) 处的水平
-  expect_equal(unname(out$coef), c(0.2 * mean(X), 0.2, 1, 3), tolerance = 1e-10)
+  expect_equal(as.vector(out$coef), c(0.2 * mean(X), 0.2, 1, 3), tolerance = 1e-10)
   expect_equal(out$fitted, Y, tolerance = 1e-10)
 })
 
@@ -161,5 +161,5 @@ test_that("LS_MultiBreaks: Ips 只有末位时退化为线性回归", {
   out <- LS_MultiBreaks(Y, X, 12L)
 
   expect_length(out$coef, 2L)
-  expect_equal(unname(out$coef), c(3 - 0.5 * mean(X), -0.5), tolerance = 1e-10)
+  expect_equal(as.vector(out$coef), c(3 - 0.5 * mean(X), -0.5), tolerance = 1e-10)
 })
